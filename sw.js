@@ -1,5 +1,5 @@
 // 진료실 도우미 오프라인 지원: 앱 화면을 미리 저장해 두고, 인터넷이 없어도 열리게 함
-const VERSION = 'clinic-v6';
+const VERSION = 'clinic-v7';
 const RUNTIME = 'ocr-v1';
 const FILES = ['./', 'index.html', 'style.css', 'app.js', 'scan.js', 'drugs.js', 'manifest.json', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png'];
 

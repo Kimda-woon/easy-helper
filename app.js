@@ -141,7 +141,9 @@ function toast(msg) {
 }
 const topbar = (title) => `<div class="topbar no-print"><button class="back" data-act="go" data-to="home">← 처음으로</button><h1>${title}</h1></div>`;
 const hospital = (id) => state.hospitals.find((h) => h.id === id);
-const hospitalName = (id) => hospital(id)?.name || '';
+// 같은 병원의 다른 과를 구분할 수 있게 "병원 이름 + 과"로 보여 줌
+const hLabel = (h) => (h ? [h.name, h.dept].filter(Boolean).join(' ') : '');
+const hospitalName = (id) => hLabel(hospital(id));
 const activeMeds = () => state.meds.filter((m) => !m.stopped);
 const medLeft = (m) => (m.start && Number(m.days) > 0 ? diffDays(addDays(m.start, Number(m.days)), today()) : null);
 const photoInput = (act, extra = '') => `<input type="file" accept="image/*" capture="environment" data-act="${act}" ${extra} hidden>`;
@@ -292,8 +294,8 @@ function viewMedEdit() {
       <label class="field"><span>한 번에 얼마나</span><input id="m-dose" value="${esc(m.dose)}" placeholder="예: 1알" autocomplete="off"></label>
       <div class="field"><span style="display:block;font-weight:700;font-size:.9rem;margin-bottom:6px">하루 몇 번 먹어요?</span>
         <div class="picks">${PER_DAY.map(([v, l]) => `<button class="pick ${m.perDay === v ? 'on' : ''}" data-act="med-per" data-v="${v}">${l}</button>`).join('')}</div></div>
-      <label class="field"><span>처방받은 병원</span><select id="m-hosp"><option value="">고르지 않음</option>${state.hospitals.map((h) => `<option value="${h.id}" ${m.hospitalId === h.id ? 'selected' : ''}>${esc(h.name)}</option>`).join('')}<option value="__new">＋ 새 병원 적기</option></select></label>
-      <input id="m-hosp-new" placeholder="병원 이름" style="margin-top:8px" hidden>
+      <label class="field"><span>처방받은 병원</span><select id="m-hosp"><option value="">고르지 않음</option>${state.hospitals.map((h) => `<option value="${h.id}" ${m.hospitalId === h.id ? 'selected' : ''}>${esc(hLabel(h))}</option>`).join('')}<option value="__new">＋ 새 병원 적기</option></select></label>
+      <div class="row new-hosp" id="m-hosp-new-row" style="margin-top:8px" hidden><input id="m-hosp-new" placeholder="병원 이름" style="flex:2;min-width:150px"><input id="m-dept-new" placeholder="과 (예: 내과)" style="flex:1;min-width:110px"></div>
       <div class="row" style="margin-top:0">
         <label class="field" style="flex:1;min-width:140px"><span>처방받은 날</span><input type="date" id="m-start" value="${esc(m.start)}" max="${today()}"></label>
         <label class="field" style="flex:1;min-width:120px"><span>며칠 치</span><input type="number" id="m-days" value="${esc(m.days)}" min="1" max="365" inputmode="numeric" placeholder="예: 30"></label>
@@ -319,17 +321,17 @@ function readMedForm() {
   let h = $('#m-hosp').value;
   if (h === '__new') {
     const name = $('#m-hosp-new').value.trim();
-    h = name ? addHospital(name) : '';
+    h = name ? addHospital(name, $('#m-dept-new').value.trim()) : '';
   }
   m.hospitalId = h;
   m.start = $('#m-start').value;
   m.days = $('#m-days').value ? String(Math.max(1, Number($('#m-days').value))) : '';
 }
 
-function addHospital(name) {
-  const found = state.hospitals.find((h) => h.name === name);
+function addHospital(name, dept = '') {
+  const found = state.hospitals.find((h) => h.name === name && (h.dept || '') === dept);
   if (found) return found.id;
-  const h = { id: uid(), name, dept: '', phone: '' };
+  const h = { id: uid(), name, dept, phone: '' };
   state.hospitals.push(h);
   return h.id;
 }
@@ -407,7 +409,10 @@ function viewScan() {
           <label class="field" style="flex:1;min-width:140px"><span>처방받은 날</span><input type="date" data-scan-field="date" value="${esc(r.date)}" max="${today()}"></label>
           <label class="field" style="flex:1;min-width:120px"><span>며칠 치</span><input type="number" data-scan-field="days" value="${esc(r.days)}" min="1" max="365" inputmode="numeric" placeholder="예: 30"></label>
         </div>
-        <label class="field"><span>병원</span><input data-scan-field="hospital" value="${esc(r.hospital)}" placeholder="예: 튼튼내과의원" autocomplete="off"></label>
+        <div class="row" style="margin-top:0">
+          <label class="field" style="flex:2;min-width:150px"><span>병원</span><input data-scan-field="hospital" value="${esc(r.hospital)}" placeholder="예: 튼튼내과의원" autocomplete="off"></label>
+          <label class="field" style="flex:1;min-width:100px"><span>과</span><input data-scan-field="dept" value="${esc(r.dept || '')}" placeholder="예: 내과" autocomplete="off"></label>
+        </div>
         <p class="hint">약마다 먹는 법이 다르면, 저장한 뒤 💊 내 약에서 약별로 고칠 수 있어요.</p>
       </div>
       <button class="btn green huge full" data-act="scan-save" ${n ? '' : 'disabled'}>✅ 맞아요, ${n}개 저장</button>
@@ -420,7 +425,7 @@ const normName = (n) => n.replace(/\s/g, '').toLowerCase();
 
 function saveScan() {
   const r = scan.r;
-  const hospitalId = r.hospital.trim() ? addHospital(r.hospital.trim()) : '';
+  const hospitalId = r.hospital.trim() ? addHospital(r.hospital.trim(), (r.dept || '').trim()) : '';
   let added = 0, updated = 0;
   for (const d of r.drugs) {
     const name = d.name.trim();
@@ -494,9 +499,10 @@ function viewVisit() {
   if (w.step === 1) {
     const yest = addDays(today(), -1);
     body = `<p class="q-title">1. 어느 병원 다녀오셨어요?</p>
-      <div class="picks">${state.hospitals.map((h) => `<button class="pick big ${w.hospitalId === h.id ? 'on' : ''}" data-act="w-hosp" data-id="${h.id}">${esc(h.name)}</button>`).join('')}
+      <div class="picks">${state.hospitals.map((h) => `<button class="pick big ${w.hospitalId === h.id ? 'on' : ''}" data-act="w-hosp" data-id="${h.id}">${esc(h.name)}${h.dept ? `<small class="dept">${esc(h.dept)}</small>` : ''}</button>`).join('')}
         <button class="pick big ${w.hospitalId === '__new' ? 'on' : ''}" data-act="w-hosp" data-id="__new">다른 곳</button></div>
-      ${w.hospitalId === '__new' ? `<input id="w-new-hosp" style="margin-top:10px" value="${esc(w.newHospital)}" placeholder="병원 이름 (예: 튼튼정형외과)" autocomplete="off">` : ''}
+      ${w.hospitalId === '__new' ? `<div class="row new-hosp" style="margin-top:10px"><input id="w-new-hosp" value="${esc(w.newHospital)}" placeholder="병원 이름 (예: 한빛병원)" autocomplete="off" style="flex:2;min-width:150px"><input id="w-new-dept" value="${esc(w.newDept || '')}" placeholder="과 (예: 정형외과)" autocomplete="off" style="flex:1;min-width:110px"></div>
+        <p class="hint">같은 병원이라도 과가 다르면 과를 적어 주세요. 따로 구분돼요.</p>` : ''}
       <p class="cat-title">언제요?</p>
       <div class="picks">
         <button class="pick ${w.date === today() ? 'on' : ''}" data-act="w-date" data-v="${today()}">오늘</button>
@@ -530,7 +536,7 @@ function viewVisit() {
 
 function saveVisit() {
   const w = wiz;
-  const hospitalId = w.hospitalId === '__new' ? addHospital(w.newHospital.trim()) : w.hospitalId;
+  const hospitalId = w.hospitalId === '__new' ? addHospital(w.newHospital.trim(), (w.newDept || '').trim()) : w.hospitalId;
   const visit = {
     id: uid(), date: w.date, hospitalId, results: w.results, memo: w.memo.trim(),
     next: w.next === 'none' ? '' : w.next, photos: w.photos,
@@ -572,8 +578,8 @@ function viewRecords() {
       <div class="card"><div class="card-head"><h2>📅 다음 진료 예약</h2></div>
         ${appts.length ? `<ul class="list">${appts.map((a) => `<li><div class="grow"><b>${niceDate(a.date)}</b> ${esc(hospitalName(a.hospitalId))}<div class="muted">${a.date >= today() ? dday(a.date) : '지난 예약'}</div></div><button class="btn sm danger" data-act="appt-del" data-id="${a.id}">지우기</button></li>`).join('')}</ul>` : '<p class="muted">잡힌 예약이 없어요.</p>'}
         <details style="margin-top:10px"><summary><b>＋ 예약 직접 넣기</b></summary>
-          <label class="field"><span>병원</span><select id="ap-hosp">${state.hospitals.map((h) => `<option value="${h.id}">${esc(h.name)}</option>`).join('')}<option value="__new">＋ 새 병원</option></select></label>
-          <input id="ap-hosp-new" placeholder="병원 이름" style="margin-top:8px" ${state.hospitals.length ? 'hidden' : ''}>
+          <label class="field"><span>병원</span><select id="ap-hosp">${state.hospitals.map((h) => `<option value="${h.id}">${esc(hLabel(h))}</option>`).join('')}<option value="__new">＋ 새 병원</option></select></label>
+          <div class="row new-hosp" id="ap-hosp-new-row" style="margin-top:8px" ${state.hospitals.length ? 'hidden' : ''}><input id="ap-hosp-new" placeholder="병원 이름" style="flex:2;min-width:150px"><input id="ap-dept-new" placeholder="과" style="flex:1;min-width:100px"></div>
           <label class="field"><span>날짜</span><input type="date" id="ap-date" min="${today()}"></label>
           <button class="btn blue full" style="margin-top:12px" data-act="appt-add">예약 넣기</button>
         </details>
@@ -630,14 +636,18 @@ function viewHistory() {
           <p class="hint">앱 메뉴 이름은 바뀔 수 있어요. 막히면 공단 고객센터(1577-1000)에 전화로 물어보세요.</p>
         </details></div>
       <div class="card"><h2>🏥 자주 가는 병원</h2>
-        ${state.hospitals.length ? `<ul class="list">${state.hospitals.map((h) => `<li><div class="grow"><b>${esc(h.name)}</b> <span class="muted">${esc(h.dept)}</span>${h.phone ? `<div><a href="tel:${cleanPhone(h.phone)}">📞 ${esc(h.phone)}</a></div>` : ''}</div><button class="btn sm danger" data-act="hosp-del" data-id="${h.id}">지우기</button></li>`).join('')}</ul>` : '<p class="muted" style="margin-top:6px">없음</p>'}
+        ${state.hospitals.length ? `<ul class="list">${state.hospitals.map((h) => `<li class="hosp-edit"><div class="grow">
+          <div class="row"><input data-hosp="${h.id}" data-field="name" value="${esc(h.name)}" aria-label="병원 이름" style="flex:2;min-width:130px"><input data-hosp="${h.id}" data-field="dept" value="${esc(h.dept || '')}" placeholder="과" aria-label="과" style="flex:1;min-width:90px"></div>
+          <input data-hosp="${h.id}" data-field="phone" value="${esc(h.phone || '')}" placeholder="전화번호" type="tel" style="margin-top:6px">
+          ${h.phone ? `<a href="tel:${cleanPhone(h.phone)}">📞 전화 걸기</a>` : ''}
+        </div><button class="btn sm danger" data-act="hosp-del" data-id="${h.id}">지우기</button></li>`).join('')}</ul>` : '<p class="muted" style="margin-top:6px">없음</p>'}
         <div class="row" style="margin-top:10px">
           <input id="h-name" placeholder="병원 이름" style="flex:2;min-width:160px">
           <input id="h-dept" placeholder="과 (예: 내과)" style="flex:1;min-width:110px">
         </div>
         <input id="h-phone" type="tel" placeholder="전화번호 (안 적어도 돼요)" style="margin-top:8px">
         <button class="btn full" style="margin-top:10px" data-act="hosp-add">＋ 넣기</button>
-        <p class="hint">여기 넣은 병원이 "병원 다녀왔어요"에서 버튼으로 나와요.</p></div>
+        <p class="hint">여기 넣은 병원이 "병원 다녀왔어요"에서 버튼으로 나와요. <b>같은 병원의 다른 과</b>는 따로 넣어 주세요(예: 한빛병원 내과 / 한빛병원 안과). 칸을 눌러 바로 고칠 수 있어요.</p></div>
       <div class="card"><h2>🔬 검사 결과지·서류 사진</h2>
         ${state.docs.length ? `<div class="thumbs">${state.docs.map((d) => `<div class="doc-item"><img class="thumb" data-photo="${d.photoId}" data-act="view" data-id="${d.photoId}" alt="${esc(d.label)}"><div class="muted" style="font-size:.75rem">${d.date.slice(2).replace(/-/g, '.')}</div><button class="btn sm danger" data-act="doc-del" data-id="${d.id}">지우기</button></div>`).join('')}</div>` : '<p class="muted" style="margin-top:6px">건강검진 결과, 피검사 결과지 등을 찍어 두세요.</p>'}
         <label class="btn full" style="margin-top:10px">📷 서류 찍기${photoInput('doc-photo')}</label></div>
@@ -675,10 +685,15 @@ function viewSettings() {
       <div class="card"><h2>💾 백업</h2>
         <p class="muted" style="margin-top:6px">기록은 이 폰에만 저장돼요. 가끔 내보내서 가족 폰이나 카톡에 보관해 두세요. 폰을 바꾸면 새 폰에서 가져오기를 누르세요. (사진도 함께 들어가요)</p>
         <p class="warn-line">⚠️ 백업 파일에는 건강 정보가 모두 들어 있어요. <b>가족에게만</b> 보내세요.</p>
-        <div class="row" style="margin-top:12px">
-          <button class="btn" data-act="export">⬇️ 내보내기</button>
-          <label class="btn">⬆️ 가져오기<input type="file" accept="application/json,.json" data-act="import" hidden></label>
-        </div></div>
+        ${backup.file ? `<div class="backup-ready">
+            <p><b>✅ 백업 파일이 준비됐어요</b><br><span class="muted small">${esc(backup.file.name)} · ${Math.max(1, Math.round(backup.file.size / 1024))}KB</span></p>
+            ${canShareFile() ? '<button class="btn blue full" style="margin-top:10px" data-act="backup-share">📤 카톡·파일로 보내기/저장</button>' : ''}
+            <button class="btn full" style="margin-top:8px" data-act="backup-download">⬇️ 이 기기에 내려받기</button>
+            <p class="hint">아이폰은 📤 를 누르고 <b>"파일에 저장"</b>이나 <b>카카오톡</b>을 고르세요.</p>
+          </div>`
+        : `<button class="btn full" style="margin-top:12px" data-act="export">${backup.busy ? '만드는 중…' : '💾 백업 파일 만들기'}</button>`}
+        <label class="btn full" style="margin-top:8px">⬆️ 백업 파일 가져오기<input type="file" accept=".json,application/json,text/plain" data-act="import" hidden></label>
+      </div>
       <div class="card"><h2>🧹 모두 지우기</h2><p class="muted" style="margin-top:6px">모든 기록과 사진을 지워요. 되돌릴 수 없어요.</p>
         <button class="btn danger" style="margin-top:10px" data-act="reset">모두 지우기</button></div>
       <p class="notice">진료실 도우미는 기록을 보여 주는 도구예요. 진단이나 처방을 대신하지 않아요. 모든 기록은 이 폰에만 있어요.</p>
@@ -716,6 +731,7 @@ function applyRoute() {
   if (!VIEWS[to]) to = 'home';
   if ((to === 'med' && !medDraft) || (to === 'done' && !lastVisit) || (to === 'scan' && !scan.status)) to = 'home'; // 새로고침하면 작성 중 화면은 처음으로
   if (to === 'visit' && !wiz) wiz = newWiz();
+  if (to !== 'settings') backup.file = null; // 기록이 바뀌었을 수 있으니 백업은 다시 만들게
   route = to;
   render();
   window.scrollTo(0, 0);
@@ -783,7 +799,7 @@ document.addEventListener('click', async (ev) => {
       const blob = bag && await getPhoto(bag.id);
       if (!blob) return;
       await startScan(blob, bag.id);
-      if (scan.r) { if (!scan.r.hospital) scan.r.hospital = hospitalName(lastVisit.hospitalId); scan.r.date = lastVisit.date; render(); }
+      if (scan.r) { const h = hospital(lastVisit.hospitalId); if (!scan.r.hospital && h) { scan.r.hospital = h.name; scan.r.dept = h.dept || ''; } scan.r.date = lastVisit.date; render(); }
       return;
     }
 
@@ -852,6 +868,7 @@ document.addEventListener('click', async (ev) => {
     case 'w-next-step':
       if ($('#w-memo')) wiz.memo = $('#w-memo').value;
       if ($('#w-new-hosp')) wiz.newHospital = $('#w-new-hosp').value;
+      if ($('#w-new-dept')) wiz.newDept = $('#w-new-dept').value;
       wiz.step += 1; wiz.cal = null; return render();
     case 'w-save': lastVisit = saveVisit(); wiz = null; toast('📋 저장했어요'); return go('done');
 
@@ -859,7 +876,7 @@ document.addEventListener('click', async (ev) => {
     case 'appt-add': {
       let h = $('#ap-hosp')?.value || '__new';
       const date = $('#ap-date').value;
-      if (h === '__new') { const n = $('#ap-hosp-new').value.trim(); if (!n) { toast('병원 이름을 적어 주세요'); return; } h = addHospital(n); }
+      if (h === '__new') { const n = $('#ap-hosp-new').value.trim(); if (!n) { toast('병원 이름을 적어 주세요'); return; } h = addHospital(n, $('#ap-dept-new').value.trim()); }
       if (!date) { toast('날짜를 골라 주세요'); return; }
       state.appts.push({ id: uid(), date, hospitalId: h, status: 'planned' }); save(); toast('📅 예약을 넣었어요'); return render();
     }
@@ -908,6 +925,8 @@ document.addEventListener('click', async (ev) => {
     case 'size': state.size = Number(el.dataset.n); save(); return render();
     case 'install': if (!installPrompt) return; installPrompt.prompt(); await installPrompt.userChoice.catch(() => {}); installPrompt = null; return render();
     case 'export': return exportData();
+    case 'backup-share': return shareBackup();
+    case 'backup-download': return downloadBackup();
     case 'reset':
       if (!confirm('정말 모든 기록과 사진을 지울까요? 되돌릴 수 없어요.')) return;
       state = defaultState(); save();
@@ -938,8 +957,17 @@ document.addEventListener('change', async (ev) => {
   const el = ev.target;
   const act = el.dataset.act;
   if (el.dataset.bind && el.tagName === 'SELECT') { const [a, b] = el.dataset.bind.split('.'); state[a][b] = el.value; save(); return; }
-  if (el.id === 'm-hosp') { $('#m-hosp-new').hidden = el.value !== '__new'; if (el.value === '__new') $('#m-hosp-new').focus(); return; }
-  if (el.id === 'ap-hosp') { $('#ap-hosp-new').hidden = el.value !== '__new'; return; }
+  if (el.dataset.hosp) {
+    const h = hospital(el.dataset.hosp);
+    if (!h) return;
+    const v = el.value.trim();
+    if (el.dataset.field === 'name' && !v) { toast('병원 이름은 비울 수 없어요'); el.value = h.name; return; }
+    h[el.dataset.field] = v;
+    save(); toast('저장했어요');
+    return;
+  }
+  if (el.id === 'm-hosp') { $('#m-hosp-new-row').hidden = el.value !== '__new'; if (el.value === '__new') $('#m-hosp-new').focus(); return; }
+  if (el.id === 'ap-hosp') { $('#ap-hosp-new-row').hidden = el.value !== '__new'; return; }
   if (act === 'import') return importData(el.files[0]);
   if (act === 'scan-photo' && el.files[0]) return startScan(el.files[0]);
   if (['med-photo', 'doc-photo'].includes(act) && el.files[0]) {
@@ -971,19 +999,50 @@ function readScanForm() {
 /* ---------- 백업 (사진 포함) ---------- */
 const blobToDataUrl = (b) => new Promise((res) => { const r = new FileReader(); r.onload = () => res(r.result); r.readAsDataURL(b); });
 
+// 백업은 두 단계: ① 파일 만들기(사진 모으느라 시간이 걸림) ② 버튼을 눌러 보내기/저장.
+// 아이폰은 '누른 순간'에만 공유·저장을 허락해서, 준비와 보내기를 나눠야 막히지 않음.
+const backup = { file: null, busy: false };
+const canShareFile = () => {
+  try { return !!(backup.file && navigator.canShare && navigator.canShare({ files: [backup.file] })); } catch (e) { return false; }
+};
+
 async function exportData() {
-  if (!confirm('이 백업 파일에는 약, 병력, 사진 등 건강 정보가 모두 들어 있어요.\n\n가족에게만 보내고, 단체방이나 모르는 사람에게는 보내지 마세요.\n\n내보낼까요?')) return;
-  toast('백업 파일을 만들고 있어요…');
-  const ids = new Set([...state.meds.map((m) => m.photoId), ...state.docs.map((d) => d.photoId), ...state.visits.flatMap((v) => (v.photos || []).map((p) => p.id))].filter(Boolean));
-  const photos = {};
-  for (const id of ids) { const b = await getPhoto(id).catch(() => null); if (b) photos[id] = await blobToDataUrl(b); }
+  if (backup.busy) return;
+  if (!confirm('이 백업 파일에는 약, 병력, 사진 등 건강 정보가 모두 들어 있어요.\n\n가족에게만 보내고, 단체방이나 모르는 사람에게는 보내지 마세요.\n\n백업 파일을 만들까요?')) return;
+  backup.busy = true; render();
+  try {
+    const ids = new Set([...state.meds.map((m) => m.photoId), ...state.docs.map((d) => d.photoId), ...state.visits.flatMap((v) => (v.photos || []).map((p) => p.id))].filter(Boolean));
+    const photos = {};
+    for (const id of ids) { const b = await getPhoto(id).catch(() => null); if (b) photos[id] = await blobToDataUrl(b); }
+    const json = JSON.stringify({ app: 'clinic-helper', savedAt: today(), state, photos });
+    backup.file = new File([json], `진료실도우미-백업-${today()}.json`, { type: 'application/json' });
+    toast('✅ 백업 파일이 준비됐어요. 아래 버튼으로 보내거나 저장하세요');
+  } catch (e) {
+    toast('백업 파일을 만들지 못했어요. 폰 저장 공간을 확인해 주세요');
+  }
+  backup.busy = false;
+  if (route === 'settings') render();
+}
+
+function shareBackup() {
+  if (!backup.file) return;
+  navigator.share({ files: [backup.file], title: '진료실 도우미 백업' })
+    .then(() => toast('📤 보냈어요'))
+    .catch((e) => { if (e && e.name !== 'AbortError') downloadBackup(); });
+}
+
+function downloadBackup() {
+  if (!backup.file) return;
+  const url = URL.createObjectURL(backup.file);
   const a = document.createElement('a');
-  a.href = URL.createObjectURL(new Blob([JSON.stringify({ app: 'clinic-helper', state, photos })], { type: 'application/json' }));
-  a.download = `진료실도우미-백업-${today()}.json`;
+  a.href = url;
+  a.download = backup.file.name;
   document.body.appendChild(a);
   a.click();
   a.remove();
-  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  // 내려받기가 막힌 환경(아이폰 홈 화면 앱 등)에서는 새 창으로 열어 공유 버튼으로 저장할 수 있게
+  if (isIOS && isStandalone()) window.open(url, '_blank');
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
 }
 
 function importData(file) {
