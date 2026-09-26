@@ -251,3 +251,7 @@ details.sum summary { cursor: pointer; font-weight: 700; padding: 8px 0; }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) .btn.orange { color: #111; }
 }
+
+/* 가족 연결 QR */
+.qr { background: #fff; border-radius: 16px; padding: 10px; margin: 10px auto; width: min(260px, 100%); }
+.qr svg { display: block; width: 100%; height: auto; }

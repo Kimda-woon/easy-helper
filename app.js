@@ -1,5 +1,6 @@
 /* 든든 도우미 — 서버·요금 없이 폰 브라우저에서 돌아가는 어르신용 도구 모음 */
 import { WORDS, SCAM_WORDS, URL_RE } from './words.js';
+import qrcode from './vendor/qrcode.mjs';
 
 const KEY = 'easy-helper-v1';
 const NTFY = 'https://ntfy.sh/';
@@ -556,15 +557,13 @@ function viewSettings() {
       <div class="card" id="sec-notify">
         <h2>🔔 가족 폰으로 알림 받기 (무료)</h2>
         ${state.topic ? `
-          <p class="muted" style="margin-top:6px">연결 코드</p>
+          <p style="margin-top:8px;font-weight:700">가족 폰 카메라로 이 QR을 찍으세요</p>
+          <div class="qr">${qrSvg(connectUrl())}</div>
+          <p class="muted" style="text-align:center">안내 페이지가 열리면 따라 하기만 하면 돼요.</p>
+          <p class="muted" style="margin-top:10px">연결 코드</p>
           <p class="topic-code">${esc(state.topic)}</p>
-          <ol class="steps-ko">
-            <li>가족 폰에서 <b>ntfy</b> 앱을 설치해요. (플레이스토어·앱스토어, 무료)</li>
-            <li>앱에서 <b>＋</b>를 누르고, 주제(Topic)에 위 코드를 넣어 <b>구독</b>해요.</li>
-            <li>아래 <b>시험 알림</b>을 눌러 가족 폰에 알림이 오는지 확인해요.</li>
-          </ol>
           <div class="stack" style="margin-top:12px">
-            <button class="btn full" data-act="share-topic">📤 가족에게 연결 방법 보내기</button>
+            <button class="btn full" data-act="share-topic">📤 멀리 사는 가족에게 링크 보내기</button>
             <button class="btn blue full" data-act="test-notify">🔔 시험 알림 보내기</button>
             <button class="btn full" data-act="ask-location">📍 위치 사용 미리 허락하기</button>
           </div>
@@ -572,6 +571,11 @@ function viewSettings() {
           <button class="chip" style="margin-top:10px" data-act="reset-topic">코드 새로 만들기</button>`
         : `<p class="muted" style="margin-top:6px">연결하면 "가족에게 연락"과 "안부"를 누르는 순간 가족 폰에 알림이 바로 가요. 문자 앱을 거치지 않아요.</p>
           <button class="btn green full" style="margin-top:12px" data-act="make-topic">🔗 알림 연결 만들기</button>`}
+      </div>
+
+      <div class="card" id="sec-install">
+        <h2>📲 앱처럼 설치하기</h2>
+        ${installView()}
       </div>
 
       <div class="card">
@@ -597,12 +601,34 @@ function viewSettings() {
     </div>`;
 }
 
-const topicGuide = () => `[든든 도우미 알림 연결]
-${whoAmI()}의 연락과 안부를 폰 알림으로 받는 방법이에요. (무료)
-1. 플레이스토어/앱스토어에서 ntfy 앱 설치
-2. 앱에서 ＋ 누르기
-3. 주제(Topic)에 아래 코드 넣고 구독
-${state.topic}`;
+// 가족이 QR을 찍거나 링크를 누르면 열리는 안내 페이지 주소
+const connectUrl = () => {
+  const u = new URL('connect.html', location.href);
+  u.search = new URLSearchParams({ t: state.topic, n: whoAmI() }).toString();
+  return u.toString();
+};
+function qrSvg(text) {
+  const qr = qrcode(0, 'M');
+  qr.addData(text);
+  qr.make();
+  return qr.createSvgTag({ cellSize: 6, margin: 3, scalable: true, alt: '알림 연결 QR코드' });
+}
+const topicGuide = () => `[든든 도우미] ${whoAmI()}의 연락과 안부를 폰 알림으로 받는 방법이에요. (무료)\n아래 링크를 눌러 따라 해 주세요.\n${connectUrl()}`;
+
+/* ---------- 앱 설치 (PWA) ---------- */
+let installPrompt = null;
+window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); installPrompt = e; if (route === 'settings') render(); });
+window.addEventListener('appinstalled', () => { installPrompt = null; toast('📲 홈 화면에 설치됐어요'); if (route === 'settings') render(); });
+const isStandalone = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+
+function installView() {
+  if (isStandalone()) return `<p class="muted" style="margin-top:6px">✅ 앱으로 설치돼 있어요.</p>`;
+  if (installPrompt) return `<p class="muted" style="margin-top:6px">홈 화면에 💚 아이콘이 생기고, 앱처럼 열려요. 인터넷이 약해도 열려요.</p>
+    <button class="btn green huge full" style="margin-top:12px" data-act="install">📲 홈 화면에 설치</button>`;
+  if (isIOS) return `<p class="muted" style="margin-top:6px">사파리에서 아래처럼 해 주세요.</p>
+    <ol class="steps-ko"><li>화면 아래 <b>공유 버튼</b>(네모에 위 화살표)을 눌러요.</li><li><b>홈 화면에 추가</b>를 눌러요.</li><li>오른쪽 위 <b>추가</b>를 눌러요.</li></ol>`;
+  return `<p class="muted" style="margin-top:6px">크롬 오른쪽 위 <b>⋮ 메뉴</b> → <b>앱 설치</b> 또는 <b>홈 화면에 추가</b>를 눌러 주세요.</p>`;
+}
 
 /* ---------- 라우팅 ---------- */
 const VIEWS = { home: viewHome, read: viewRead, call: viewCall, emergency: viewEmergency, hello: viewHello, settings: viewSettings };
@@ -703,6 +729,12 @@ document.addEventListener('click', async (ev) => {
       toast(c ? '📍 위치 사용이 허락됐어요' : '위치를 쓸 수 없어요. 폰 설정에서 위치를 켜고 브라우저에 허용해 주세요');
       return;
     }
+    case 'install':
+      if (!installPrompt) return;
+      installPrompt.prompt();
+      await installPrompt.userChoice.catch(() => {});
+      installPrompt = null;
+      return render();
     case 'export': return exportData();
     default:
   }
@@ -776,3 +808,8 @@ document.addEventListener('visibilitychange', () => {
 });
 
 render();
+
+// 오프라인에서도 열리도록 (https에서만 동작)
+if ('serviceWorker' in navigator && location.protocol !== 'file:') {
+  navigator.serviceWorker.register('sw.js').catch(() => {});
+}
