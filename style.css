@@ -236,3 +236,9 @@ table.meds td:first-child { font-weight: 800; }
   .card { border: 1px solid #999; break-inside: avoid; padding: 10px; border-radius: 6px; }
   .show-head { background: none; color: #000; border: 2px solid #000; }
 }
+
+/* 개인정보 안내 */
+.privacy { margin-top: 16px; padding: 12px 14px; border-radius: 16px; background: var(--green-soft); color: var(--green); font-weight: 700; font-size: .9rem; text-align: center; }
+.privacy-card { border-color: var(--green); background: var(--green-soft); }
+.warn-line { margin-top: 8px; padding: 10px 12px; border-radius: 12px; background: var(--orange-soft); color: var(--orange); font-size: .85rem; font-weight: 700; }
+.size-pick .pick { text-align: center; padding: 12px 6px; }

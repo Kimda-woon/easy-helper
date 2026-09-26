@@ -170,6 +170,7 @@ function viewHome() {
         <button data-act="go" data-to="history"><span>🗂️</span>내 병력</button>
         <button data-act="go" data-to="settings"><span>⚙️</span>설정</button>
       </div>
+      <div class="privacy">🔒 기록은 <b>이 폰에만</b> 저장돼요. 어디에도 보내지 않아요.</div>
       <p class="notice">기록을 보여 주는 도구예요. 진단이나 처방을 대신하지 않아요.</p>
     </div>`;
 }
@@ -475,11 +476,19 @@ function installView() {
 function viewSettings() {
   return `${topbar('⚙️ 설정')}
     <div class="stack">
+      <div class="card privacy-card"><h2>🔒 내 정보는 어디에 있나요?</h2>
+        <ul class="steps-ko">
+          <li>약, 병력, 사진은 <b>이 폰 안에만</b> 저장돼요.</li>
+          <li>인터넷으로 어디에도 보내지 않아요. 만든 사람도 볼 수 없어요.</li>
+          <li>이 앱 주소를 다른 사람에게 알려 줘도, 그 사람에게는 <b>빈 앱</b>이 열려요.</li>
+          <li>폰을 잃어버리면 보일 수 있으니 <b>폰 화면 잠금</b>을 꼭 걸어 두세요.</li>
+        </ul></div>
       <div class="card"><h2>📲 앱처럼 설치하기</h2>${installView()}</div>
       <div class="card"><h2>🔠 글자 크기</h2>
         <div class="size-pick">${[1, 2, 3].map((n) => `<button class="pick ${state.size === n ? 'on' : ''}" data-act="size" data-n="${n}">${['크게', '더 크게', '아주 크게'][n - 1]}</button>`).join('')}</div></div>
       <div class="card"><h2>💾 백업</h2>
         <p class="muted" style="margin-top:6px">기록은 이 폰에만 저장돼요. 가끔 내보내서 가족 폰이나 카톡에 보관해 두세요. 폰을 바꾸면 새 폰에서 가져오기를 누르세요. (사진도 함께 들어가요)</p>
+        <p class="warn-line">⚠️ 백업 파일에는 건강 정보가 모두 들어 있어요. <b>가족에게만</b> 보내세요.</p>
         <div class="row" style="margin-top:12px">
           <button class="btn" data-act="export">⬇️ 내보내기</button>
           <label class="btn">⬆️ 가져오기<input type="file" accept="application/json,.json" data-act="import" hidden></label>
@@ -708,6 +717,7 @@ document.addEventListener('keydown', (ev) => {
 const blobToDataUrl = (b) => new Promise((res) => { const r = new FileReader(); r.onload = () => res(r.result); r.readAsDataURL(b); });
 
 async function exportData() {
+  if (!confirm('이 백업 파일에는 약, 병력, 사진 등 건강 정보가 모두 들어 있어요.\n\n가족에게만 보내고, 단체방이나 모르는 사람에게는 보내지 마세요.\n\n내보낼까요?')) return;
   toast('백업 파일을 만들고 있어요…');
   const ids = new Set([...state.meds.map((m) => m.photoId), ...state.docs.map((d) => d.photoId), ...state.visits.flatMap((v) => (v.photos || []).map((p) => p.id))].filter(Boolean));
   const photos = {};
