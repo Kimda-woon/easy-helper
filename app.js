@@ -1,6 +1,7 @@
 /* 진료실 도우미 — 병원에서 보여 줄 약·병력·물어볼 것을 폰 한 화면에. 서버·요금 없음 */
 
 import { readImage, parseBag } from './scan.js';
+import { checkMeds, ingredientsOf, describe } from './drugs.js';
 
 const KEY = 'clinic-helper-v1';
 const OLD_KEY = 'easy-helper-v1'; // 예전 '든든 도우미'의 응급 정보를 한 번 옮겨 옴
@@ -154,6 +155,30 @@ function pendingAppt() {
 }
 const dday = (s) => { const n = diffDays(s, today()); return n === 0 ? '오늘' : n === 1 ? '내일' : n === 2 ? '모레' : `${n}일 뒤`; };
 
+/* ---------- 함께 먹을 때 주의 ---------- */
+const LEVEL = { high: ['위험', 'lv-high'], mid: ['확인 필요', 'lv-mid'] };
+const DDI_NOTE = '자주 문제되는 조합만 확인해요. 경고가 없다고 안전하다는 뜻은 아니에요. 약을 바꾸거나 끊기 전에 꼭 의사·약사와 상의하세요.';
+
+function warningList(res, withAsk) {
+  return res.warnings.map((w, i) => `<div class="ddi ${LEVEL[w.level][1]}">
+    <div class="ddi-top"><span class="lv">${LEVEL[w.level][0]}</span><b>${esc(w.a.name)}</b> + <b>${esc(w.b.name)}</b></div>
+    <p>${esc(w.why)}</p>
+    ${withAsk ? `<button class="btn sm no-print" data-act="ddi-ask" data-i="${i}">❓ 물어볼 것에 넣기</button>` : ''}
+  </div>`).join('');
+}
+
+function ddiCard(meds, where) {
+  if (meds.length < 2) return '';
+  const res = checkMeds(meds);
+  const unknownLine = res.unknown.length ? `<p class="muted small" style="margin-top:8px">성분을 확인하지 못한 약: ${res.unknown.map((m) => esc(m.name)).join(', ')} (이 약은 검사에서 빠졌어요)</p>` : '';
+  if (!res.warnings.length) {
+    return where === 'show' ? '' : `<div class="card ddi-ok"><h2>✅ 알려진 주의 조합은 없어요</h2><p class="muted small" style="margin-top:6px">${DDI_NOTE}</p>${unknownLine}</div>`;
+  }
+  return `<div class="card ddi-card"><h2>⚠️ 함께 먹을 때 ${where === 'show' ? '확인이 필요한 약' : '주의'} (${res.warnings.length})</h2>
+    ${warningList(res, true)}
+    <p class="muted small" style="margin-top:8px">${DDI_NOTE}</p>${unknownLine}</div>`;
+}
+
 /* ---------- 홈 ---------- */
 function viewHome() {
   const d = new Date();
@@ -169,6 +194,8 @@ function viewHome() {
       ${pend ? `<div class="card info"><div class="banner"><span class="ico">📋</span><div><h2>${niceDate(pend.date)} ${esc(hospitalName(pend.hospitalId))}<br>다녀오셨어요?</h2><p class="muted">버튼 몇 번이면 기록돼요.</p></div></div>
         <div class="row" style="margin-top:12px"><button class="btn blue" data-act="visit-from-appt" data-id="${pend.id}">네, 기록할게요</button><button class="btn" data-act="appt-missed" data-id="${pend.id}">못 갔어요</button></div></div>` : ''}
       ${next ? `<div class="card"><div class="banner"><span class="ico">📅</span><div><h2>${dday(next.date)} ${esc(hospitalName(next.hospitalId))}</h2><p class="muted">${fullDate(next.date)}</p></div></div></div>` : ''}
+      ${(() => { const hi = checkMeds(meds).warnings.filter((w) => w.level === 'high'); return hi.length ? `<div class="card ddi-card"><div class="banner"><span class="ico">⚠️</span><div><h2>함께 먹으면 위험할 수 있는 약이 있어요</h2><p class="muted">${hi.map((w) => `${esc(w.a.name)} + ${esc(w.b.name)}`).join('<br>')}</p></div></div>
+        <button class="btn full" style="margin-top:10px" data-act="go" data-to="meds">자세히 보기</button></div>` : ''; })()}
       ${low.length ? `<div class="card warn"><div class="banner"><span class="ico">⚠️</span><div>${low.map(([m, n]) => `<h2>${esc(m.name)} ${n <= 0 ? '다 드셨어요' : `${n}일 뒤 떨어져요`}</h2>`).join('')}<p class="muted">병원에 가서 더 받아 오세요.</p></div></div></div>` : ''}
       <div class="home-grid">
         <button class="big-btn hero b-blue" data-act="go" data-to="show"><span class="ico">🩺</span><span>의사 선생님께 보여 주기<small>진료실에서 이 화면을 보여 드려요</small></span></button>
@@ -205,6 +232,7 @@ function viewShow() {
         </tbody></table>` : '<p class="muted">적어 둔 약이 없어요.</p>'}
         ${medPhotos.length ? `<p class="muted no-print" style="margin-top:10px">약 봉투 사진 (눌러서 크게)</p><div class="thumbs no-print">${medPhotos.map((m) => `<img class="thumb" data-photo="${m.photoId}" data-act="view" data-id="${m.photoId}" alt="${esc(m.name)} 약 봉투">`).join('')}</div>` : ''}
       </div>
+      ${ddiCard(meds, 'show')}
       ${state.asks.length ? `<div class="card show-sec"><h2>오늘 여쭤보고 싶은 것</h2>
         ${state.asks.map((a) => `<label class="ask-item ${a.answered ? 'done' : ''}"><input type="checkbox" data-act="ask-answered" data-id="${a.id}" ${a.answered ? 'checked' : ''}><span>${esc(a.text)}</span></label>`).join('')}
         <p class="hint no-print">답을 들으면 눌러서 ✓ 표시하세요.</p></div>` : ''}
@@ -218,13 +246,17 @@ function viewShow() {
 function viewMeds() {
   const meds = activeMeds();
   const stopped = state.meds.filter((m) => m.stopped);
+  const res = checkMeds(meds);
+  const flagged = new Set(res.warnings.flatMap((w) => [w.a.id, w.b.id]));
   const medRow = (m) => {
     const n = medLeft(m);
+    const ings = ingredientsOf(m.name);
     return `<div class="med">
       ${m.photoId ? `<img class="thumb" data-photo="${m.photoId}" data-act="view" data-id="${m.photoId}" alt="약 봉투">` : ''}
       <div class="grow">
-        <div class="name">${esc(m.name)}</div>
+        <div class="name">${esc(m.name)} ${!m.stopped && flagged.has(m.id) ? '<span class="tag lv-high-tag">⚠️ 주의</span>' : ''}</div>
         <div class="meta">${esc([m.dose, freqLabel(m)].filter(Boolean).join(' · ')) || '하루 몇 번 먹는지 아직 안 적었어요'}</div>
+        <div class="meta ing">${ings.length ? `성분: ${ings.map((i) => esc(describe(i))).join(', ')}` : '성분 확인 안 됨'}</div>
         ${hospitalName(m.hospitalId) || m.start ? `<div class="meta">${esc(hospitalName(m.hospitalId))} ${m.start ? `· ${niceDate(m.start)} 처방` : ''}</div>` : ''}
         ${n !== null ? `<div class="left-days ${n <= 5 ? 'low' : ''}">${n <= 0 ? '다 드셨어요' : `${n}일 치 남았어요`}</div>` : ''}
       </div>
@@ -235,6 +267,7 @@ function viewMeds() {
     <div class="stack">
       <label class="btn green huge full">📷 약 봉투 찍어서 넣기${photoInput('scan-photo')}</label>
       <button class="btn full" data-act="med-new">✏️ 직접 적어서 넣기</button>
+      ${ddiCard(meds, 'meds')}
       <div class="card">${meds.length ? meds.map(medRow).join('') : '<p class="muted">아직 넣은 약이 없어요. 약 봉투를 보면서 넣어 주세요.</p>'}</div>
       ${stopped.length ? `<details class="card"><summary><b>그만 먹는 약 (${stopped.length})</b></summary><div style="margin-top:12px">${stopped.map(medRow).join('')}</div></details>` : ''}
       <div class="card info"><h2>💡 약 목록을 처음 만들 때</h2>
@@ -255,6 +288,7 @@ function viewMedEdit() {
         <label class="btn full" style="margin-top:8px">📷 약 봉투 ${m.photoId ? '다시 찍기' : '사진 찍기'}${photoInput('med-photo')}</label>
       </div>
       <label class="field"><span>약 이름 (필수)</span><input id="m-name" value="${esc(m.name)}" placeholder="예: 노바스크정 5mg" autocomplete="off"></label>
+      <p class="hint" id="m-ing">${ingHint(m.name)}</p>
       <label class="field"><span>한 번에 얼마나</span><input id="m-dose" value="${esc(m.dose)}" placeholder="예: 1알" autocomplete="off"></label>
       <div class="field"><span style="display:block;font-weight:700;font-size:.9rem;margin-bottom:6px">하루 몇 번 먹어요?</span>
         <div class="picks">${PER_DAY.map(([v, l]) => `<button class="pick ${m.perDay === v ? 'on' : ''}" data-act="med-per" data-v="${v}">${l}</button>`).join('')}</div></div>
@@ -270,6 +304,12 @@ function viewMedEdit() {
         <button class="btn" data-act="med-stop">${m.stopped ? '다시 먹는 약으로' : '그만 먹는 약으로'}</button>
         <button class="btn danger" data-act="med-del">지우기</button></div>`}
     </div></div>`;
+}
+
+function ingHint(name) {
+  if (!String(name || '').trim()) return '';
+  const ings = ingredientsOf(name);
+  return ings.length ? `🔎 성분: ${ings.map((i) => esc(describe(i))).join(', ')}` : '🔎 이 약의 성분은 앱 사전에 없어요. 함께 먹을 때 주의 검사에서 빠져요.';
 }
 
 function readMedForm() {
@@ -747,6 +787,14 @@ document.addEventListener('click', async (ev) => {
       return;
     }
 
+    case 'ddi-ask': {
+      const w = checkMeds(activeMeds()).warnings[Number(el.dataset.i)];
+      if (!w) return;
+      const q = `${w.a.name}이랑 ${w.b.name}, 같이 먹어도 돼요?`;
+      if (!state.asks.some((a) => a.text === q)) state.asks.push({ id: uid(), text: q, answered: false });
+      save(); toast('❓ 물어볼 것에 넣었어요'); return render();
+    }
+
     // 물어볼 것
     case 'ask-toggle': {
       const q = el.dataset.q;
@@ -882,6 +930,7 @@ document.addEventListener('input', (ev) => {
     const btn = $('[data-act=scan-save]');
     if (btn) { btn.textContent = `✅ 맞아요, ${n}개 저장`; btn.disabled = !n; }
   }
+  if (el.id === 'm-name') { const h = $('#m-ing'); if (h) h.innerHTML = ingHint(el.value); }
   if (el.id === 'w-new-hosp') { wiz.newHospital = el.value; const btn = $('[data-act=w-next-step]'); if (btn) btn.disabled = !el.value.trim(); }
 });
 
