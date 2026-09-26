@@ -1,5 +1,7 @@
 /* 진료실 도우미 — 병원에서 보여 줄 약·병력·물어볼 것을 폰 한 화면에. 서버·요금 없음 */
 
+import { readImage, parseBag } from './scan.js';
+
 const KEY = 'clinic-helper-v1';
 const OLD_KEY = 'easy-helper-v1'; // 예전 '든든 도우미'의 응급 정보를 한 번 옮겨 옴
 
@@ -222,7 +224,8 @@ function viewMeds() {
   };
   return `${topbar('💊 내 약')}
     <div class="stack">
-      <button class="btn green huge full" data-act="med-new">＋ 약 넣기</button>
+      <label class="btn green huge full">📷 약 봉투 찍어서 넣기${photoInput('scan-photo')}</label>
+      <button class="btn full" data-act="med-new">✏️ 직접 적어서 넣기</button>
       <div class="card">${meds.length ? meds.map(medRow).join('') : '<p class="muted">아직 넣은 약이 없어요. 약 봉투를 보면서 넣어 주세요.</p>'}</div>
       ${stopped.length ? `<details class="card"><summary><b>그만 먹는 약 (${stopped.length})</b></summary><div style="margin-top:12px">${stopped.map(medRow).join('')}</div></details>` : ''}
       <div class="card info"><h2>💡 약 목록을 처음 만들 때</h2>
@@ -282,6 +285,107 @@ function addHospital(name) {
   const h = { id: uid(), name, dept: '', phone: '' };
   state.hospitals.push(h);
   return h.id;
+}
+
+/* ---------- 📷 약 봉투 찍어서 넣기 ---------- */
+const scan = { status: '', progress: 0, photoId: '', r: null, error: '' };
+
+function blobToImage(blob) {
+  return new Promise((res, rej) => {
+    const url = URL.createObjectURL(blob);
+    const img = new Image();
+    img.onload = () => { URL.revokeObjectURL(url); res(img); };
+    img.onerror = () => { URL.revokeObjectURL(url); rej(new Error('img')); };
+    img.src = url;
+  });
+}
+
+async function startScan(blob, photoId = '') {
+  Object.assign(scan, { status: 'working', progress: 0, photoId, r: null, error: '' });
+  go('scan');
+  try {
+    if (!scan.photoId) scan.photoId = await fileToPhoto(blob);
+    const img = await blobToImage(blob); // 원본 해상도로 읽어야 정확함
+    const { text } = await readImage(img, (p) => {
+      scan.progress = p;
+      const bar = $('#scan-bar');
+      if (bar) bar.style.width = Math.round(p * 100) + '%';
+    });
+    const r = parseBag(text);
+    scan.r = {
+      drugs: r.drugs.map((d) => ({ name: d.name, on: true })),
+      hospital: r.hospital, date: r.date && r.date <= today() ? r.date : today(),
+      times: r.times, days: r.days, timing: r.timing, lines: r.lines,
+    };
+    scan.status = r.drugs.length ? 'review' : 'fail';
+  } catch (e) {
+    scan.status = 'fail';
+    scan.error = e.message === 'load' ? '처음 한 번은 글자 읽기 도구를 받아야 해서 인터넷이 필요해요. 와이파이나 데이터를 켜고 다시 해 주세요.' : '사진을 읽지 못했어요.';
+  }
+  if (route === 'scan') render();
+}
+
+function viewScan() {
+  if (scan.status === 'working') {
+    return `${topbar('📷 약 봉투 읽기')}<div class="card loading-card"><p class="big-emoji">🔎</p><h2>약 이름을 읽고 있어요</h2>
+      <div class="bar"><i id="scan-bar" style="width:${Math.round(scan.progress * 100)}%"></i></div>
+      <p class="muted" style="margin-top:10px">사진은 폰 밖으로 나가지 않아요. 처음 한 번은 30초쯤 걸려요.</p></div>`;
+  }
+  if (scan.status === 'fail' || !scan.r) {
+    return `${topbar('📷 약 봉투 읽기')}<div class="stack">
+      <div class="card warn"><h2>약 이름을 찾지 못했어요</h2>
+        <p class="muted" style="margin-top:6px">${esc(scan.error || '글씨가 흐리거나 멀리서 찍히면 잘 못 읽어요.')}</p>
+        <ul class="steps-ko"><li>밝은 곳에서 찍어 주세요.</li><li>약 이름이 있는 부분이 화면에 꽉 차게 가까이 찍어 주세요.</li><li>종이가 구겨지지 않게 펴 주세요.</li></ul></div>
+      <label class="btn green huge full">📷 다시 찍기${photoInput('scan-photo')}</label>
+      <button class="btn full" data-act="scan-manual">✏️ 직접 적기 (찍은 사진은 붙여 둘게요)</button></div>`;
+  }
+  const r = scan.r;
+  const n = r.drugs.filter((d) => d.on && d.name.trim()).length;
+  return `${topbar('📷 이렇게 읽었어요')}
+    <div class="stack">
+      <div class="card info"><p><b>맞는지 한번 봐 주세요.</b> 약이 아닌 줄은 체크를 빼고, 틀린 글자는 눌러서 고쳐 주세요.</p></div>
+      <div class="card">
+        <div class="row between"><h2>💊 찾은 약</h2>${scan.photoId ? `<img class="thumb" data-photo="${scan.photoId}" data-act="view" data-id="${scan.photoId}" alt="찍은 사진">` : ''}</div>
+        ${r.drugs.map((d, i) => `<div class="scan-drug ${d.on ? '' : 'off'}">
+          <input type="checkbox" data-act="scan-on" data-i="${i}" ${d.on ? 'checked' : ''} aria-label="넣기">
+          <input data-scan-name="${i}" value="${esc(d.name)}" aria-label="약 이름">
+        </div>`).join('')}
+        <div class="inline-add"><input id="scan-add" placeholder="빠진 약이 있으면 적어 주세요" autocomplete="off"><button class="btn" data-act="scan-add">넣기</button></div>
+      </div>
+      <div class="card">
+        <h2>🕘 먹는 법 (모든 약에 똑같이 들어가요)</h2>
+        <div class="picks" style="margin-top:10px">${TIMES.map((t) => `<button class="pick ${r.times.includes(t) ? 'on' : ''}" data-act="scan-time" data-v="${t}">${t}</button>`).join('')}</div>
+        <label class="field"><span>밥이랑</span><select data-scan-field="timing">${TIMING.map((t) => `<option value="${t}" ${r.timing === t ? 'selected' : ''}>${t || '고르지 않음'}</option>`).join('')}</select></label>
+        <div class="row" style="margin-top:0">
+          <label class="field" style="flex:1;min-width:140px"><span>처방받은 날</span><input type="date" data-scan-field="date" value="${esc(r.date)}" max="${today()}"></label>
+          <label class="field" style="flex:1;min-width:120px"><span>며칠 치</span><input type="number" data-scan-field="days" value="${esc(r.days)}" min="1" max="365" inputmode="numeric" placeholder="예: 30"></label>
+        </div>
+        <label class="field"><span>병원</span><input data-scan-field="hospital" value="${esc(r.hospital)}" placeholder="예: 튼튼내과의원" autocomplete="off"></label>
+        <p class="hint">약마다 먹는 법이 다르면, 저장한 뒤 💊 내 약에서 약별로 고칠 수 있어요.</p>
+      </div>
+      <button class="btn green huge full" data-act="scan-save" ${n ? '' : 'disabled'}>✅ 맞아요, ${n}개 저장</button>
+      <label class="btn full">📷 다시 찍기${photoInput('scan-photo')}</label>
+      <details class="card"><summary><b>읽은 글 전체 보기</b></summary><p class="muted" style="white-space:pre-wrap;margin-top:8px">${esc(r.lines.join('\n'))}</p></details>
+    </div>`;
+}
+
+const normName = (n) => n.replace(/\s/g, '').toLowerCase();
+
+function saveScan() {
+  const r = scan.r;
+  const hospitalId = r.hospital.trim() ? addHospital(r.hospital.trim()) : '';
+  let added = 0, updated = 0;
+  for (const d of r.drugs) {
+    const name = d.name.trim();
+    if (!d.on || !name) continue;
+    const fields = { times: [...r.times], timing: r.timing, hospitalId, start: r.date, days: r.days, photoId: scan.photoId, stopped: false };
+    // 같은 약을 다시 받아 온 것이면 새로 만들지 않고 날짜·사진만 새로
+    const same = state.meds.find((m) => normName(m.name) === normName(name));
+    if (same) { Object.assign(same, fields, { times: r.times.length ? fields.times : same.times, timing: r.timing || same.timing }); updated++; }
+    else { state.meds.push({ id: uid(), name, dose: '', ...fields }); added++; }
+  }
+  save();
+  return [added, updated];
 }
 
 /* ---------- ❓ 물어볼 것 ---------- */
@@ -381,7 +485,8 @@ function viewVisitDone() {
       <div class="card ok"><p style="font-size:3rem;line-height:1.1">✅</p><h2>진료 기록을 저장했어요</h2>
         <p class="muted" style="margin-top:6px">${niceDate(v.date)} ${esc(hospitalName(v.hospitalId))}${v.next ? `<br>다음 진료: <b>${fullDate(v.next)}</b>` : ''}</p></div>
       ${changed ? `<div class="card warn"><h2>약이 바뀌었나요?</h2><p class="muted" style="margin-top:6px">내 약을 새로 정리해 두면 다음 진료 때 정확하게 보여 드릴 수 있어요.</p>
-        <button class="btn green full" style="margin-top:12px" data-act="med-from-visit">💊 새 약 넣기</button>
+        ${v.photos.some((p) => p.kind === 'bag') ? '<button class="btn green full" style="margin-top:12px" data-act="scan-visit-bag">📷 찍어 둔 약 봉투로 자동 넣기</button>' : '<label class="btn green full" style="margin-top:12px">📷 약 봉투 찍어서 넣기' + photoInput('scan-photo') + '</label>'}
+        <button class="btn full" style="margin-top:10px" data-act="med-from-visit">✏️ 직접 적어서 넣기</button>
         <button class="btn full" style="margin-top:10px" data-act="go" data-to="meds">안 먹는 약 정리하기</button></div>` : ''}
       <button class="btn huge full" data-act="go" data-to="home">처음으로</button>
     </div>`;
@@ -480,6 +585,7 @@ function viewSettings() {
         <ul class="steps-ko">
           <li>약, 병력, 사진은 <b>이 폰 안에만</b> 저장돼요.</li>
           <li>인터넷으로 어디에도 보내지 않아요. 만든 사람도 볼 수 없어요.</li>
+          <li>약 봉투 글자 읽기도 <b>폰 안에서</b> 해요. 처음 한 번만 글자 읽기 도구를 인터넷에서 받아요. 사진은 보내지 않아요.</li>
           <li>이 앱 주소를 다른 사람에게 알려 줘도, 그 사람에게는 <b>빈 앱</b>이 열려요.</li>
           <li>폰을 잃어버리면 보일 수 있으니 <b>폰 화면 잠금</b>을 꼭 걸어 두세요.</li>
         </ul></div>
@@ -510,7 +616,7 @@ async function openViewer(id) {
 }
 
 /* ---------- 라우팅 ---------- */
-const VIEWS = { home: viewHome, show: viewShow, meds: viewMeds, med: viewMedEdit, ask: viewAsk, visit: viewVisit, done: viewVisitDone, records: viewRecords, history: viewHistory, settings: viewSettings };
+const VIEWS = { home: viewHome, show: viewShow, meds: viewMeds, med: viewMedEdit, scan: viewScan, ask: viewAsk, visit: viewVisit, done: viewVisitDone, records: viewRecords, history: viewHistory, settings: viewSettings };
 let route = 'home';
 
 function render() {
@@ -528,7 +634,7 @@ function go(to) {
 function applyRoute() {
   let to = location.hash.slice(1);
   if (!VIEWS[to]) to = 'home';
-  if ((to === 'med' && !medDraft) || (to === 'done' && !lastVisit)) to = 'home'; // 새로고침하면 작성 중 화면은 처음으로
+  if ((to === 'med' && !medDraft) || (to === 'done' && !lastVisit) || (to === 'scan' && !scan.status)) to = 'home'; // 새로고침하면 작성 중 화면은 처음으로
   if (to === 'visit' && !wiz) wiz = newWiz();
   route = to;
   render();
@@ -579,6 +685,31 @@ document.addEventListener('click', async (ev) => {
       const bag = v.photos.find((p) => p.kind === 'bag');
       medDraft = { id: uid(), name: '', dose: '', times: [], timing: '', hospitalId: v.hospitalId, start: v.date, days: '', photoId: bag?.id || '', stopped: false };
       return go('med');
+    }
+
+    // 약 봉투 읽기
+    case 'scan-on': readScanForm(); scan.r.drugs[Number(el.dataset.i)].on = el.checked; return render();
+    case 'scan-time': { readScanForm(); const t = el.dataset.v; const r = scan.r; r.times = r.times.includes(t) ? r.times.filter((x) => x !== t) : [...r.times, t]; return render(); }
+    case 'scan-add': { readScanForm(); const t = $('#scan-add').value.trim(); if (!t) return; scan.r.drugs.push({ name: t, on: true }); return render(); }
+    case 'scan-save': {
+      readScanForm();
+      const [a, u] = saveScan();
+      scan.status = '';
+      toast(`💊 ${a ? `${a}개 넣었어요` : ''}${a && u ? ', ' : ''}${u ? `${u}개는 새로 받은 걸로 바꿨어요` : ''}`);
+      location.replace('#meds');
+      return;
+    }
+    case 'scan-manual':
+      medDraft = { id: uid(), name: '', dose: '', times: [], timing: '', hospitalId: '', start: today(), days: '', photoId: scan.photoId, stopped: false };
+      scan.status = '';
+      return go('med');
+    case 'scan-visit-bag': {
+      const bag = lastVisit?.photos.find((p) => p.kind === 'bag');
+      const blob = bag && await getPhoto(bag.id);
+      if (!blob) return;
+      await startScan(blob, bag.id);
+      if (scan.r) { if (!scan.r.hospital) scan.r.hospital = hospitalName(lastVisit.hospitalId); scan.r.date = lastVisit.date; render(); }
+      return;
     }
 
     // 물어볼 것
@@ -681,6 +812,12 @@ document.addEventListener('input', (ev) => {
     state[a][b] = el.value;
     save();
   }
+  if (el.dataset.scanName !== undefined) {
+    readScanForm();
+    const n = scan.r.drugs.filter((d) => d.on && d.name.trim()).length;
+    const btn = $('[data-act=scan-save]');
+    if (btn) { btn.textContent = `✅ 맞아요, ${n}개 저장`; btn.disabled = !n; }
+  }
   if (el.id === 'w-new-hosp') { wiz.newHospital = el.value; const btn = $('[data-act=w-next-step]'); if (btn) btn.disabled = !el.value.trim(); }
 });
 
@@ -693,6 +830,7 @@ document.addEventListener('change', async (ev) => {
   if (act === 'w-date-pick' && el.value) { wiz.date = el.value; return render(); }
   if (act === 'w-next-pick' && el.value) { wiz.next = el.value; wiz.nextPick = true; return render(); }
   if (act === 'import') return importData(el.files[0]);
+  if (act === 'scan-photo' && el.files[0]) return startScan(el.files[0]);
   if (['med-photo', 'w-photo', 'doc-photo'].includes(act) && el.files[0]) {
     try {
       toast('사진을 저장하고 있어요…');
@@ -712,6 +850,13 @@ document.addEventListener('keydown', (ev) => {
   const act = map[ev.target.id];
   if (act) { ev.preventDefault(); $(`[data-act="${act}"]${act === 'tag-add' ? `[data-key="${ev.target.id.slice(4)}"]` : ''}`)?.click(); }
 });
+
+// 확인 화면에서 고친 내용을 다시 그리기 전에 받아 둠
+function readScanForm() {
+  if (!scan.r) return;
+  $$('[data-scan-name]').forEach((el) => { scan.r.drugs[Number(el.dataset.scanName)].name = el.value; });
+  $$('[data-scan-field]').forEach((el) => { scan.r[el.dataset.scanField] = el.value; });
+}
 
 /* ---------- 백업 (사진 포함) ---------- */
 const blobToDataUrl = (b) => new Promise((res) => { const r = new FileReader(); r.onload = () => res(r.result); r.readAsDataURL(b); });

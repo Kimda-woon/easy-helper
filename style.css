@@ -242,3 +242,13 @@ table.meds td:first-child { font-weight: 800; }
 .privacy-card { border-color: var(--green); background: var(--green-soft); }
 .warn-line { margin-top: 8px; padding: 10px 12px; border-radius: 12px; background: var(--orange-soft); color: var(--orange); font-size: .85rem; font-weight: 700; }
 .size-pick .pick { text-align: center; padding: 12px 6px; }
+
+/* 약 봉투 읽기 */
+.loading-card { text-align: center; }
+.loading-card .bar { height: 14px; background: var(--soft); border-radius: 999px; overflow: hidden; margin-top: 16px; }
+.loading-card .bar i { display: block; height: 100%; width: 0; background: var(--blue); transition: width .3s; }
+.big-emoji { font-size: 3rem; line-height: 1.1; margin-bottom: 6px; }
+.scan-drug { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
+.scan-drug input[type=checkbox] { width: 30px; height: 30px; accent-color: var(--green); flex: none; }
+.scan-drug input:not([type]) { font-weight: 800; font-size: 1.1rem; }
+.scan-drug.off input:not([type]) { opacity: .45; text-decoration: line-through; }
