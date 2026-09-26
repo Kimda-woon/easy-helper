@@ -21,8 +21,9 @@ const fullDate = (s) => `${s.slice(0, 4)}년 ${niceDate(s)}`;
 const cleanPhone = (p) => String(p || '').replace(/[^\d+]/g, '');
 const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 
-const TIMES = ['아침', '점심', '저녁', '자기 전', '아플 때만'];
-const TIMING = ['', '밥 먹기 전', '밥 먹고 바로', '밥 먹고 30분 뒤', '상관없음'];
+// 하루 몇 번 먹는지 (필요할 때만 먹는 약은 'prn')
+const PER_DAY = [['1', '하루 1번'], ['2', '하루 2번'], ['3', '하루 3번'], ['4', '하루 4번'], ['prn', '필요할 때만']];
+const freqLabel = (m) => (PER_DAY.find(([v]) => v === m.perDay) || [])[1] || '';
 const QUESTIONS = {
   '💊 약': ['이 약 언제까지 먹어요?', '밥 먹기 전에 먹어요, 먹고 나서 먹어요?', '다른 약이랑 같이 먹어도 돼요?', '약 먹고 어지러워요', '약 먹고 속이 쓰려요', '약을 깜빡하면 어떻게 해요?', '약을 줄일 수 있어요?'],
   '🤕 몸 상태': ['이거 심각한 거예요?', '운동해도 돼요?', '먹으면 안 되는 음식 있어요?', '술·담배 괜찮아요?', '잠을 잘 못 자요', '자꾸 깜빡깜빡해요', '변비·설사가 있어요'],
@@ -43,7 +44,15 @@ const defaultState = () => ({
 
 function hydrate(d) {
   const base = defaultState();
-  return { ...base, ...d, profile: { ...base.profile, ...(d.profile || {}) } };
+  const out = { ...base, ...d, profile: { ...base.profile, ...(d.profile || {}) } };
+  // 예전 버전의 "언제 먹어요(아침·저녁…)"를 "하루 몇 번"으로 바꿈
+  out.meds = (out.meds || []).map((m) => {
+    if (m.perDay !== undefined) return m;
+    const t = (m.times || []).filter((x) => x !== '아플 때만');
+    const perDay = t.length ? String(Math.min(4, t.length)) : (m.times || []).includes('아플 때만') ? 'prn' : '';
+    return { ...m, perDay };
+  });
+  return out;
 }
 
 function migrateOld() {
@@ -61,7 +70,7 @@ function migrateOld() {
     const split = (t) => String(t || '').split(/[,，\n]/).map((x) => x.trim()).filter(Boolean);
     s.conditions = split(e.disease);
     s.allergies = split(e.allergy);
-    s.meds = split(e.meds).map((name) => ({ id: uid(), name, dose: '', times: [], timing: '', hospitalId: '', start: '', days: '', photoId: '', stopped: false }));
+    s.meds = split(e.meds).map((name) => ({ id: uid(), name, dose: '', perDay: '', hospitalId: '', start: '', days: '', photoId: '', stopped: false }));
     if (e.hospital) s.hospitals.push({ id: uid(), name: e.hospital, dept: '', phone: '' });
     return s;
   } catch (err) { return null; }
@@ -191,8 +200,8 @@ function viewShow() {
       ${state.allergies.length ? `<div class="card show-sec alert"><h2>⚠️ 알레르기</h2><p class="big-text">${state.allergies.map(esc).join(', ')}</p></div>` : ''}
       ${state.conditions.length ? `<div class="card show-sec"><h2>앓고 있는 병</h2><p class="big-text">${state.conditions.map(esc).join(', ')}</p></div>` : ''}
       <div class="card show-sec"><h2>먹고 있는 약 (${meds.length})</h2>
-        ${meds.length ? `<table class="meds"><thead><tr><th>약 이름</th><th>얼마나·언제</th><th>처방</th></tr></thead><tbody>
-          ${meds.map((m) => `<tr><td>${esc(m.name)}</td><td>${esc([m.dose, m.times.join('·'), m.timing].filter(Boolean).join(', ')) || '-'}</td><td>${esc([hospitalName(m.hospitalId), m.start && niceDate(m.start)].filter(Boolean).join('\n')) || '-'}</td></tr>`).join('')}
+        ${meds.length ? `<table class="meds"><thead><tr><th>약 이름</th><th>얼마나·하루 몇 번</th><th>처방</th></tr></thead><tbody>
+          ${meds.map((m) => `<tr><td>${esc(m.name)}</td><td>${esc([m.dose, freqLabel(m)].filter(Boolean).join(', ')) || '-'}</td><td>${esc([hospitalName(m.hospitalId), m.start && niceDate(m.start)].filter(Boolean).join('\n')) || '-'}</td></tr>`).join('')}
         </tbody></table>` : '<p class="muted">적어 둔 약이 없어요.</p>'}
         ${medPhotos.length ? `<p class="muted no-print" style="margin-top:10px">약 봉투 사진 (눌러서 크게)</p><div class="thumbs no-print">${medPhotos.map((m) => `<img class="thumb" data-photo="${m.photoId}" data-act="view" data-id="${m.photoId}" alt="${esc(m.name)} 약 봉투">`).join('')}</div>` : ''}
       </div>
@@ -215,7 +224,7 @@ function viewMeds() {
       ${m.photoId ? `<img class="thumb" data-photo="${m.photoId}" data-act="view" data-id="${m.photoId}" alt="약 봉투">` : ''}
       <div class="grow">
         <div class="name">${esc(m.name)}</div>
-        <div class="meta">${esc([m.dose, m.times.join('·'), m.timing].filter(Boolean).join(' · ')) || '먹는 때를 아직 안 적었어요'}</div>
+        <div class="meta">${esc([m.dose, freqLabel(m)].filter(Boolean).join(' · ')) || '하루 몇 번 먹는지 아직 안 적었어요'}</div>
         ${hospitalName(m.hospitalId) || m.start ? `<div class="meta">${esc(hospitalName(m.hospitalId))} ${m.start ? `· ${niceDate(m.start)} 처방` : ''}</div>` : ''}
         ${n !== null ? `<div class="left-days ${n <= 5 ? 'low' : ''}">${n <= 0 ? '다 드셨어요' : `${n}일 치 남았어요`}</div>` : ''}
       </div>
@@ -247,9 +256,8 @@ function viewMedEdit() {
       </div>
       <label class="field"><span>약 이름 (필수)</span><input id="m-name" value="${esc(m.name)}" placeholder="예: 노바스크정 5mg" autocomplete="off"></label>
       <label class="field"><span>한 번에 얼마나</span><input id="m-dose" value="${esc(m.dose)}" placeholder="예: 1알" autocomplete="off"></label>
-      <div class="field"><span style="display:block;font-weight:700;font-size:.9rem;margin-bottom:6px">언제 먹어요? (여러 개 골라도 돼요)</span>
-        <div class="picks">${TIMES.map((t) => `<button class="pick ${m.times.includes(t) ? 'on' : ''}" data-act="med-time" data-v="${t}">${t}</button>`).join('')}</div></div>
-      <label class="field"><span>밥이랑</span><select id="m-timing">${TIMING.map((t) => `<option value="${t}" ${m.timing === t ? 'selected' : ''}>${t || '고르지 않음'}</option>`).join('')}</select></label>
+      <div class="field"><span style="display:block;font-weight:700;font-size:.9rem;margin-bottom:6px">하루 몇 번 먹어요?</span>
+        <div class="picks">${PER_DAY.map(([v, l]) => `<button class="pick ${m.perDay === v ? 'on' : ''}" data-act="med-per" data-v="${v}">${l}</button>`).join('')}</div></div>
       <label class="field"><span>처방받은 병원</span><select id="m-hosp"><option value="">고르지 않음</option>${state.hospitals.map((h) => `<option value="${h.id}" ${m.hospitalId === h.id ? 'selected' : ''}>${esc(h.name)}</option>`).join('')}<option value="__new">＋ 새 병원 적기</option></select></label>
       <input id="m-hosp-new" placeholder="병원 이름" style="margin-top:8px" hidden>
       <div class="row" style="margin-top:0">
@@ -268,7 +276,6 @@ function readMedForm() {
   const m = medDraft;
   m.name = $('#m-name').value.trim();
   m.dose = $('#m-dose').value.trim();
-  m.timing = $('#m-timing').value;
   let h = $('#m-hosp').value;
   if (h === '__new') {
     const name = $('#m-hosp-new').value.trim();
@@ -315,7 +322,7 @@ async function startScan(blob, photoId = '') {
     scan.r = {
       drugs: r.drugs.map((d) => ({ name: d.name, on: true })),
       hospital: r.hospital, date: r.date && r.date <= today() ? r.date : today(),
-      times: r.times, days: r.days, timing: r.timing, lines: r.lines,
+      perDay: r.perDay, days: r.days, lines: r.lines,
     };
     scan.status = r.drugs.length ? 'review' : 'fail';
   } catch (e) {
@@ -354,8 +361,8 @@ function viewScan() {
       </div>
       <div class="card">
         <h2>🕘 먹는 법 (모든 약에 똑같이 들어가요)</h2>
-        <div class="picks" style="margin-top:10px">${TIMES.map((t) => `<button class="pick ${r.times.includes(t) ? 'on' : ''}" data-act="scan-time" data-v="${t}">${t}</button>`).join('')}</div>
-        <label class="field"><span>밥이랑</span><select data-scan-field="timing">${TIMING.map((t) => `<option value="${t}" ${r.timing === t ? 'selected' : ''}>${t || '고르지 않음'}</option>`).join('')}</select></label>
+        <p class="muted small" style="margin-top:8px">하루 몇 번 먹어요?</p>
+        <div class="picks" style="margin-top:6px">${PER_DAY.map(([v, l]) => `<button class="pick ${r.perDay === v ? 'on' : ''}" data-act="scan-per" data-v="${v}">${l}</button>`).join('')}</div>
         <div class="row" style="margin-top:0">
           <label class="field" style="flex:1;min-width:140px"><span>처방받은 날</span><input type="date" data-scan-field="date" value="${esc(r.date)}" max="${today()}"></label>
           <label class="field" style="flex:1;min-width:120px"><span>며칠 치</span><input type="number" data-scan-field="days" value="${esc(r.days)}" min="1" max="365" inputmode="numeric" placeholder="예: 30"></label>
@@ -378,10 +385,10 @@ function saveScan() {
   for (const d of r.drugs) {
     const name = d.name.trim();
     if (!d.on || !name) continue;
-    const fields = { times: [...r.times], timing: r.timing, hospitalId, start: r.date, days: r.days, photoId: scan.photoId, stopped: false };
+    const fields = { perDay: r.perDay || '', hospitalId, start: r.date, days: r.days, photoId: scan.photoId, stopped: false };
     // 같은 약을 다시 받아 온 것이면 새로 만들지 않고 날짜·사진만 새로
     const same = state.meds.find((m) => normName(m.name) === normName(name));
-    if (same) { Object.assign(same, fields, { times: r.times.length ? fields.times : same.times, timing: r.timing || same.timing }); updated++; }
+    if (same) { Object.assign(same, fields, { perDay: r.perDay || same.perDay || '' }); updated++; }
     else { state.meds.push({ id: uid(), name, dose: '', ...fields }); added++; }
   }
   save();
@@ -688,12 +695,11 @@ document.addEventListener('click', async (ev) => {
     case 'v-zoom': return $('#viewer')?.classList.toggle('zoom');
 
     // 약
-    case 'med-new': medDraft = { id: uid(), name: '', dose: '', times: [], timing: '', hospitalId: '', start: today(), days: '', photoId: '', stopped: false }; return go('med');
+    case 'med-new': medDraft = { id: uid(), name: '', dose: '', perDay: '', hospitalId: '', start: today(), days: '', photoId: '', stopped: false }; return go('med');
     case 'med-edit': medDraft = structuredClone(state.meds.find((m) => m.id === id)); return go('med');
-    case 'med-time': {
+    case 'med-per': {
       readMedForm();
-      const t = el.dataset.v;
-      medDraft.times = medDraft.times.includes(t) ? medDraft.times.filter((x) => x !== t) : [...medDraft.times, t];
+      medDraft.perDay = medDraft.perDay === el.dataset.v ? '' : el.dataset.v; // 다시 누르면 선택 해제
       return render();
     }
     case 'med-save': {
@@ -712,13 +718,13 @@ document.addEventListener('click', async (ev) => {
     case 'med-from-visit': {
       const v = lastVisit;
       const bag = v.photos.find((p) => p.kind === 'bag');
-      medDraft = { id: uid(), name: '', dose: '', times: [], timing: '', hospitalId: v.hospitalId, start: v.date, days: '', photoId: bag?.id || '', stopped: false };
+      medDraft = { id: uid(), name: '', dose: '', perDay: '', hospitalId: v.hospitalId, start: v.date, days: '', photoId: bag?.id || '', stopped: false };
       return go('med');
     }
 
     // 약 봉투 읽기
     case 'scan-on': readScanForm(); scan.r.drugs[Number(el.dataset.i)].on = el.checked; return render();
-    case 'scan-time': { readScanForm(); const t = el.dataset.v; const r = scan.r; r.times = r.times.includes(t) ? r.times.filter((x) => x !== t) : [...r.times, t]; return render(); }
+    case 'scan-per': { readScanForm(); scan.r.perDay = scan.r.perDay === el.dataset.v ? '' : el.dataset.v; return render(); }
     case 'scan-add': { readScanForm(); const t = $('#scan-add').value.trim(); if (!t) return; scan.r.drugs.push({ name: t, on: true }); return render(); }
     case 'scan-save': {
       readScanForm();
@@ -729,7 +735,7 @@ document.addEventListener('click', async (ev) => {
       return;
     }
     case 'scan-manual':
-      medDraft = { id: uid(), name: '', dose: '', times: [], timing: '', hospitalId: '', start: today(), days: '', photoId: scan.photoId, stopped: false };
+      medDraft = { id: uid(), name: '', dose: '', perDay: '', hospitalId: '', start: today(), days: '', photoId: scan.photoId, stopped: false };
       scan.status = '';
       return go('med');
     case 'scan-visit-bag': {

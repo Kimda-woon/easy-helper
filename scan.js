@@ -132,10 +132,9 @@ function cleanName(name) {
     .trim();
 }
 
-const TIMES_BY_COUNT = { 1: ['아침'], 2: ['아침', '저녁'], 3: ['아침', '점심', '저녁'], 4: ['아침', '점심', '저녁', '자기 전'] };
 
 /**
- * 인식한 글자에서 약 이름, 병원, 날짜, 하루 몇 번, 며칠 치, 식전·식후를 찾음.
+ * 인식한 글자에서 약 이름, 병원, 날짜, 하루 몇 번, 며칠 치를 찾음.
  * 못 찾은 값은 비워 둠 (사람이 확인·수정).
  */
 export function parseBag(text) {
@@ -160,12 +159,6 @@ export function parseBag(text) {
   const hosp = all.match(/([가-힣A-Za-z0-9]{2,20}(?:의원|병원|의료원|클리닉|보건소|한의원))/);
   const times = all.match(/1\s*일\s*([1-4])\s*회/);
   const days = all.match(/(\d{1,3})\s*일\s*분/) || all.match(/총\s*(\d{1,3})\s*일/);
-  let timing = '';
-  if (/식후\s*30\s*분/.test(all)) timing = '밥 먹고 30분 뒤';
-  else if (/식후\s*즉시|식후\s*바로/.test(all)) timing = '밥 먹고 바로';
-  else if (/식전/.test(all)) timing = '밥 먹기 전';
-  const bedtime = /취침\s*전|자기\s*전/.test(all);
-
   // 날짜: 조제일자 2026.09.17 / 2026-09-17 / 교부번호 20260917-0107
   let date = '';
   const d1 = all.match(/(20\d{2})\s*[.\-/년]\s*(\d{1,2})\s*[.\-/월]\s*(\d{1,2})/);
@@ -176,15 +169,12 @@ export function parseBag(text) {
     if (Number(mo) >= 1 && Number(mo) <= 12 && Number(da) >= 1 && Number(da) <= 31) date = `${y}-${mo}-${da}`;
   }
 
-  let t = times ? [...TIMES_BY_COUNT[times[1]]] : [];
-  if (bedtime && !t.includes('자기 전')) t = [...t, '자기 전'];
   return {
     drugs,
     hospital: hosp ? hosp[1] : '',
     date,
-    times: t,
+    perDay: times ? times[1] : '',   // "1일 3회" → '3'
     days: days ? String(Number(days[1])) : '',
-    timing,
     lines,
   };
 }
