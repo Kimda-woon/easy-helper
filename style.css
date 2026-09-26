@@ -252,3 +252,26 @@ table.meds td:first-child { font-weight: 800; }
 .scan-drug input[type=checkbox] { width: 30px; height: 30px; accent-color: var(--green); flex: none; }
 .scan-drug input:not([type]) { font-weight: 800; font-size: 1.1rem; }
 .scan-drug.off input:not([type]) { opacity: .45; text-decoration: line-through; }
+
+/* 큰 달력 */
+.calendar { margin-top: 14px; border: 2px solid var(--blue); border-radius: 18px; padding: 10px 8px; background: var(--card); }
+.cal-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+.cal-head b { font-size: 1.15rem; white-space: nowrap; }
+.cal-head .btn { min-width: 56px; }
+.cal-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
+.cal-dow { text-align: center; font-size: .8rem; font-weight: 700; color: var(--muted); padding: 4px 0; }
+.cal-day {
+  aspect-ratio: 1; width: 100%; min-width: 0; min-height: 40px; border: 2px solid transparent; background: var(--soft); border-radius: 12px;
+  font-size: 1.05rem; font-weight: 800; cursor: pointer; padding: 0;
+}
+.cal-day.today { border-color: var(--blue); }
+.cal-day.sel { background: var(--blue); color: #fff; }
+.cal-day[disabled] { opacity: .25; cursor: default; }
+.sun { color: var(--red); }
+.cal-day.sel.sun { color: #fff; }
+
+/* 서류 사진 · 도움말 */
+.doc-item { text-align: center; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.doc-item .btn.sm { min-height: 36px; padding: 4px 10px; font-size: .8rem; }
+.find-help { margin-top: 12px; background: var(--blue-soft); border-radius: 14px; padding: 10px 12px; }
+.find-help summary { cursor: pointer; font-weight: 700; color: var(--blue); }

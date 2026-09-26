@@ -410,13 +410,39 @@ function viewAsk() {
 let wiz = null;
 const newWiz = (appt) => ({
   step: 1, apptId: appt?.id || '', date: appt?.date || today(), hospitalId: appt?.hospitalId || '', newHospital: '',
-  results: [], memo: '', next: '', nextPick: false, photos: [],
+  results: [], memo: '', next: '', nextPick: false, photos: [], cal: null,
 });
+
+// 큰 글씨 달력 (폰 기본 날짜 창이 안 뜨는 경우가 있어 직접 그림)
+function calendar(cal, selected, min, max) {
+  const [y, m] = cal.month.split('-').map(Number);
+  const startDow = new Date(y, m - 1, 1).getDay();
+  const last = new Date(y, m, 0).getDate();
+  const prevOk = !min || cal.month > min.slice(0, 7);
+  const nextOk = !max || cal.month < max.slice(0, 7);
+  const cells = [];
+  for (let i = 0; i < startDow; i++) cells.push('<span></span>');
+  for (let d = 1; d <= last; d++) {
+    const v = `${y}-${pad(m)}-${pad(d)}`;
+    const off = (min && v < min) || (max && v > max);
+    const dow = (startDow + d - 1) % 7;
+    cells.push(`<button class="cal-day ${v === selected ? 'sel' : ''} ${v === today() ? 'today' : ''} ${dow === 0 ? 'sun' : ''}" data-act="cal-day" data-v="${v}" ${off ? 'disabled' : ''}>${d}</button>`);
+  }
+  return `<div class="calendar">
+    <div class="cal-head">
+      <button class="btn sm" data-act="cal-nav" data-d="-1" ${prevOk ? '' : 'disabled'} aria-label="이전 달">◀</button>
+      <b>${y}년 ${m}월</b>
+      <button class="btn sm" data-act="cal-nav" data-d="1" ${nextOk ? '' : 'disabled'} aria-label="다음 달">▶</button>
+    </div>
+    <div class="cal-grid">${DAYS.map((d, i) => `<span class="cal-dow ${i === 0 ? 'sun' : ''}">${d}</span>`).join('')}${cells.join('')}</div>
+    <button class="btn full sm" style="margin-top:8px" data-act="cal-close">닫기</button>
+  </div>`;
+}
 
 function viewVisit() {
   if (!wiz) wiz = newWiz();
   const w = wiz;
-  const bar = `<div class="step-bar">${[1, 2, 3, 4].map((n) => `<i class="${n <= w.step ? 'on' : ''}"></i>`).join('')}</div>`;
+  const bar = `<div class="step-bar">${[1, 2, 3].map((n) => `<i class="${n <= w.step ? 'on' : ''}"></i>`).join('')}</div>`;
   let body = '';
   if (w.step === 1) {
     const yest = addDays(today(), -1);
@@ -429,8 +455,9 @@ function viewVisit() {
         <button class="pick ${w.date === today() ? 'on' : ''}" data-act="w-date" data-v="${today()}">오늘</button>
         <button class="pick ${w.date === yest ? 'on' : ''}" data-act="w-date" data-v="${yest}">어제</button>
         ${w.date !== today() && w.date !== yest ? `<button class="pick on">${niceDate(w.date)}</button>` : ''}
-        <label class="pick">다른 날<input type="date" data-act="w-date-pick" max="${today()}" style="position:absolute;opacity:0;width:1px;height:1px"></label>
-      </div>`;
+        <button class="pick" data-act="cal-open" data-for="date">📅 다른 날</button>
+      </div>
+      ${w.cal?.for === 'date' ? calendar(w.cal, w.date, addDays(today(), -365 * 2), today()) : ''}`;
   } else if (w.step === 2) {
     body = `<p class="q-title">2. 의사 선생님이 뭐라고 하셨어요?</p><p class="muted" style="margin:-8px 0 12px">여러 개 골라도 돼요.</p>
       <div class="picks">${RESULTS.map((r) => `<button class="pick big ${w.results.includes(r) ? 'on' : ''}" data-act="w-result" data-v="${r}">${r}</button>`).join('')}</div>
@@ -439,20 +466,17 @@ function viewVisit() {
     body = `<p class="q-title">3. 다음에 언제 오래요?</p>
       <div class="picks">${NEXTS.map(([label, n]) => { const d = addDays(w.date, n); return `<button class="pick big ${w.next === d && !w.nextPick ? 'on' : ''}" data-act="w-next" data-v="${d}">${label}</button>`; }).join('')}
         <button class="pick big ${w.next === 'none' ? 'on' : ''}" data-act="w-next" data-v="none">안 와도 된대요</button>
-        <label class="pick big ${w.nextPick ? 'on' : ''}" style="position:relative">${w.nextPick && w.next ? niceDate(w.next) : '날짜 고르기'}<input type="date" data-act="w-next-pick" min="${today()}" style="position:absolute;opacity:0;width:1px;height:1px"></label>
+        <button class="pick big ${w.nextPick ? 'on' : ''}" data-act="cal-open" data-for="next">📅 ${w.nextPick && w.next ? niceDate(w.next) : '날짜 고르기'}</button>
       </div>
+      ${w.cal?.for === 'next' ? calendar(w.cal, w.nextPick ? w.next : '', today(), addDays(today(), 365 * 2)) : ''}
       ${w.next && w.next !== 'none' ? `<p class="muted" style="margin-top:12px">📅 ${fullDate(w.next)}로 적어 둘게요.</p>` : ''}`;
-  } else {
-    body = `<p class="q-title">4. 받아 온 종이가 있으면 찍어 주세요</p><p class="muted" style="margin:-8px 0 12px">없으면 그냥 <b>저장</b>을 누르세요.</p>
-      <div class="picks">${Object.entries(PHOTO_KINDS).slice(0, 3).map(([k, label]) => `<label class="pick big">${label}${photoInput('w-photo', `data-kind="${k}"`)}</label>`).join('')}</div>
-      ${w.photos.length ? `<div class="thumbs" style="margin-top:12px">${w.photos.map((p) => `<img class="thumb" data-photo="${p.id}" data-act="view" data-id="${p.id}" alt="${PHOTO_KINDS[p.kind]}">`).join('')}</div>` : ''}`;
   }
-  const canNext = w.step === 1 ? w.hospitalId && (w.hospitalId !== '__new' || w.newHospital.trim()) : w.step === 2 ? w.results.length > 0 : w.step === 3 ? !!w.next : true;
+  const canNext = w.step === 1 ? w.hospitalId && (w.hospitalId !== '__new' || w.newHospital.trim()) : w.step === 2 ? w.results.length > 0 : !!w.next;
   return `${topbar('📋 병원 다녀왔어요')}
     <div class="card">${bar}${body}
       <div class="wizard-nav">
         ${w.step > 1 ? '<button class="btn" data-act="w-back">← 이전</button>' : ''}
-        ${w.step < 4 ? `<button class="btn blue" data-act="w-next-step" ${canNext ? '' : 'disabled'}>다음 →</button>` : '<button class="btn green" data-act="w-save">저장</button>'}
+        ${w.step < 3 ? `<button class="btn blue" data-act="w-next-step" ${canNext ? '' : 'disabled'}>다음 →</button>` : `<button class="btn green" data-act="w-save" ${canNext ? '' : 'disabled'}>저장</button>`}
       </div>
     </div>`;
 }
@@ -548,7 +572,16 @@ function viewHistory() {
           <input id="s-what" placeholder="무엇 (예: 백내장 수술)" style="flex:2;min-width:160px">
         </div>
         <input id="s-hosp" placeholder="병원 (안 적어도 돼요)" style="margin-top:8px">
-        <button class="btn full" style="margin-top:10px" data-act="surg-add">＋ 넣기</button></div>
+        <button class="btn full" style="margin-top:10px" data-act="surg-add">＋ 넣기</button>
+        <details class="find-help"><summary>🔍 수술 이력이 기억나지 않으면 어디서 찾나요?</summary>
+          <ul class="steps-ko">
+            <li><b>수술받은 병원 원무과</b>: "진료기록 사본"이나 "수술기록지"를 떼 달라고 하면 돼요. 본인은 신분증만, 가족이 대신 갈 때는 위임장과 가족관계증명서가 필요해요.</li>
+            <li><b>국민건강보험공단 "The건강보험" 앱·누리집</b>: 본인 인증 후 진료 내역을 보면, 언제 어느 병원에 입원·진료했는지 나와요.</li>
+            <li><b>건강보험심사평가원 "건강e음" 앱·누리집</b>: "내 진료정보 열람"에서 진료 받은 병원과 받은 약을 볼 수 있어요.</li>
+            <li><b>실손보험 청구 내역</b>: 보험사 앱에서 예전에 청구한 수술·입원 기록을 볼 수 있어요.</li>
+          </ul>
+          <p class="hint">앱 메뉴 이름은 바뀔 수 있어요. 막히면 공단 고객센터(1577-1000)에 전화로 물어보세요.</p>
+        </details></div>
       <div class="card"><h2>🏥 자주 가는 병원</h2>
         ${state.hospitals.length ? `<ul class="list">${state.hospitals.map((h) => `<li><div class="grow"><b>${esc(h.name)}</b> <span class="muted">${esc(h.dept)}</span>${h.phone ? `<div><a href="tel:${cleanPhone(h.phone)}">📞 ${esc(h.phone)}</a></div>` : ''}</div><button class="btn sm danger" data-act="hosp-del" data-id="${h.id}">지우기</button></li>`).join('')}</ul>` : '<p class="muted" style="margin-top:6px">없음</p>'}
         <div class="row" style="margin-top:10px">
@@ -559,7 +592,7 @@ function viewHistory() {
         <button class="btn full" style="margin-top:10px" data-act="hosp-add">＋ 넣기</button>
         <p class="hint">여기 넣은 병원이 "병원 다녀왔어요"에서 버튼으로 나와요.</p></div>
       <div class="card"><h2>🔬 검사 결과지·서류 사진</h2>
-        ${state.docs.length ? `<div class="thumbs">${state.docs.map((d) => `<div style="text-align:center"><img class="thumb" data-photo="${d.photoId}" data-act="view" data-id="${d.photoId}" alt="${esc(d.label)}"><div class="muted" style="font-size:.75rem">${d.date.slice(2).replace(/-/g, '.')}</div></div>`).join('')}</div>` : '<p class="muted" style="margin-top:6px">건강검진 결과, 피검사 결과지 등을 찍어 두세요.</p>'}
+        ${state.docs.length ? `<div class="thumbs">${state.docs.map((d) => `<div class="doc-item"><img class="thumb" data-photo="${d.photoId}" data-act="view" data-id="${d.photoId}" alt="${esc(d.label)}"><div class="muted" style="font-size:.75rem">${d.date.slice(2).replace(/-/g, '.')}</div><button class="btn sm danger" data-act="doc-del" data-id="${d.id}">지우기</button></div>`).join('')}</div>` : '<p class="muted" style="margin-top:6px">건강검진 결과, 피검사 결과지 등을 찍어 두세요.</p>'}
         <label class="btn full" style="margin-top:10px">📷 서류 찍기${photoInput('doc-photo')}</label></div>
     </div>`;
 }
@@ -644,10 +677,6 @@ window.addEventListener('hashchange', applyRoute);
 
 /* ---------- 이벤트 ---------- */
 document.addEventListener('click', async (ev) => {
-  // 버튼처럼 생긴 '날짜 고르기'를 누르면 달력이 바로 열리게
-  const dateLabel = ev.target.closest('label.pick');
-  const dateInput = dateLabel?.querySelector('input[type=date]');
-  if (dateInput && ev.target !== dateInput) { ev.preventDefault(); try { dateInput.showPicker(); } catch (e) { dateInput.focus(); } return; }
   const el = ev.target.closest('[data-act]');
   if (!el || (el.matches('input, select') && el.type !== 'checkbox')) return;
   const id = el.dataset.id;
@@ -740,14 +769,36 @@ document.addEventListener('click', async (ev) => {
       return;
     }
     case 'w-hosp': wiz.hospitalId = id; render(); if (id === '__new') $('#w-new-hosp')?.focus(); return;
-    case 'w-date': wiz.date = el.dataset.v; return render();
+    case 'w-date': wiz.date = el.dataset.v; wiz.cal = null; return render();
+    case 'cal-open': {
+      if ($('#w-memo')) wiz.memo = $('#w-memo').value;
+      const f = el.dataset.for;
+      if (wiz.cal?.for === f) { wiz.cal = null; return render(); }
+      const base = f === 'date' ? wiz.date : (wiz.nextPick && wiz.next) || addDays(today(), 7);
+      wiz.cal = { for: f, month: base.slice(0, 7) };
+      render();
+      $('.calendar')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      return;
+    }
+    case 'cal-nav': {
+      const [y, m] = wiz.cal.month.split('-').map(Number);
+      const d = new Date(y, m - 1 + Number(el.dataset.d), 1);
+      wiz.cal.month = `${d.getFullYear()}-${pad(d.getMonth() + 1)}`;
+      return render();
+    }
+    case 'cal-day':
+      if (wiz.cal.for === 'date') wiz.date = el.dataset.v;
+      else { wiz.next = el.dataset.v; wiz.nextPick = true; }
+      wiz.cal = null;
+      return render();
+    case 'cal-close': wiz.cal = null; return render();
     case 'w-result': { const r = el.dataset.v; wiz.results = wiz.results.includes(r) ? wiz.results.filter((x) => x !== r) : [...wiz.results, r]; wiz.memo = $('#w-memo')?.value || wiz.memo; return render(); }
-    case 'w-next': wiz.next = el.dataset.v; wiz.nextPick = false; return render();
-    case 'w-back': if ($('#w-memo')) wiz.memo = $('#w-memo').value; wiz.step -= 1; return render();
+    case 'w-next': wiz.next = el.dataset.v; wiz.nextPick = false; wiz.cal = null; return render();
+    case 'w-back': if ($('#w-memo')) wiz.memo = $('#w-memo').value; wiz.step -= 1; wiz.cal = null; return render();
     case 'w-next-step':
       if ($('#w-memo')) wiz.memo = $('#w-memo').value;
       if ($('#w-new-hosp')) wiz.newHospital = $('#w-new-hosp').value;
-      wiz.step += 1; return render();
+      wiz.step += 1; wiz.cal = null; return render();
     case 'w-save': lastVisit = saveVisit(); wiz = null; toast('📋 저장했어요'); return go('done');
 
     // 진료 기록
@@ -782,6 +833,13 @@ document.addEventListener('click', async (ev) => {
       state.surgeries.push({ id: uid(), year: $('#s-year').value.trim(), what, hospital: $('#s-hosp').value.trim() });
       state.surgeries.sort((a, b) => String(a.year).localeCompare(String(b.year)));
       save(); return render();
+    }
+    case 'doc-del': {
+      if (!confirm('이 사진을 지울까요?')) return;
+      const d = state.docs.find((x) => x.id === id);
+      if (d) { delPhoto(d.photoId); urlCache.delete(d.photoId); }
+      state.docs = state.docs.filter((x) => x.id !== id);
+      save(); toast('지웠어요'); return render();
     }
     case 'surg-del': state.surgeries = state.surgeries.filter((s) => s.id !== id); save(); return render();
     case 'hosp-add': {
@@ -827,16 +885,13 @@ document.addEventListener('change', async (ev) => {
   if (el.dataset.bind && el.tagName === 'SELECT') { const [a, b] = el.dataset.bind.split('.'); state[a][b] = el.value; save(); return; }
   if (el.id === 'm-hosp') { $('#m-hosp-new').hidden = el.value !== '__new'; if (el.value === '__new') $('#m-hosp-new').focus(); return; }
   if (el.id === 'ap-hosp') { $('#ap-hosp-new').hidden = el.value !== '__new'; return; }
-  if (act === 'w-date-pick' && el.value) { wiz.date = el.value; return render(); }
-  if (act === 'w-next-pick' && el.value) { wiz.next = el.value; wiz.nextPick = true; return render(); }
   if (act === 'import') return importData(el.files[0]);
   if (act === 'scan-photo' && el.files[0]) return startScan(el.files[0]);
-  if (['med-photo', 'w-photo', 'doc-photo'].includes(act) && el.files[0]) {
+  if (['med-photo', 'doc-photo'].includes(act) && el.files[0]) {
     try {
       toast('사진을 저장하고 있어요…');
       const pid = await fileToPhoto(el.files[0]);
       if (act === 'med-photo') { readMedForm(); medDraft.photoId = pid; }
-      if (act === 'w-photo') wiz.photos.push({ id: pid, kind: el.dataset.kind });
       if (act === 'doc-photo') { state.docs.push({ id: uid(), photoId: pid, label: '검사·서류', date: today() }); save(); }
       toast('📷 저장했어요');
       render();
