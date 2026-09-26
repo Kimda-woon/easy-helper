@@ -221,3 +221,33 @@ details.sum summary { cursor: pointer; font-weight: 700; padding: 8px 0; }
   .print-card div { margin-top: 1mm; }
   .print-card b { color: #c62828; }
 }
+
+/* 연락: 카운트다운 · 완료 */
+.btn.orange { background: var(--orange); border-color: var(--orange); color: #fff; }
+.count-card { text-align: center; border-color: var(--orange); background: var(--orange-soft); }
+.count-num { font-size: 5rem; font-weight: 900; line-height: 1; color: var(--orange); }
+.ok-card { text-align: center; border-color: var(--green); background: var(--green-soft); }
+.big-emoji { font-size: 3.5rem; line-height: 1.1; margin-bottom: 6px; }
+.loading .bar { height: 14px; background: var(--soft); border-radius: 999px; overflow: hidden; margin-top: 14px; }
+.loading .bar i { display: block; height: 100%; width: 0; background: var(--purple); transition: width .3s; }
+
+/* 안부: 누르면 바로 보내는 큰 버튼 */
+.mood-list { display: grid; gap: 12px; }
+.mood-btn {
+  display: flex; align-items: center; gap: 16px; width: 100%; min-height: 96px; padding: 16px 20px;
+  border: 3px solid var(--line); background: var(--card); border-radius: var(--radius);
+  font-size: 1.4rem; font-weight: 800; cursor: pointer; text-align: left;
+}
+.mood-btn span { font-size: 2.6rem; }
+.mood-btn:active { transform: scale(.98); }
+.m-good { border-color: var(--green); background: var(--green-soft); color: var(--green); }
+.m-soso { border-color: var(--blue); background: var(--blue-soft); color: var(--blue); }
+.m-sick { border-color: var(--red); background: var(--red-soft); color: var(--red); }
+
+/* 알림 연결 */
+.topic-code { font-family: ui-monospace, Menlo, monospace; font-size: 1.3rem; font-weight: 800; letter-spacing: .5px; background: var(--soft); border-radius: 12px; padding: 10px 14px; margin-top: 4px; user-select: all; }
+.steps-ko { padding-left: 1.2em; margin: 12px 0 0; }
+.steps-ko li { margin-top: 6px; font-size: .95rem; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .btn.orange { color: #111; }
+}
